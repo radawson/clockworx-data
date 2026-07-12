@@ -8,6 +8,8 @@ import java.util.logging.Logger;
 import org.clockworx.data.DatabaseSettings;
 import org.clockworx.data.DatabaseType;
 import org.hibernate.SessionFactory;
+import org.hibernate.boot.registry.BootstrapServiceRegistry;
+import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.cfg.Environment;
 
@@ -49,7 +51,20 @@ public final class HibernateBootstrap {
         try {
             logger.log(Level.INFO, "Initializing Hibernate SessionFactory...");
 
-            Configuration configuration = new Configuration();
+            // The DB stack may be loaded via Paper's library-loader, which places Hibernate in a
+            // *separate* classloader from the plugin's entity classes. Hibernate resolves entity
+            // class names through its own ClassLoaderService, which by default cannot see the
+            // plugin classloader -> "entity class not found" during binding. Register the loader
+            // that actually owns the entities so name-based resolution succeeds. (Harmless under
+            // the legacy shaded model, where the entities share Hibernate's classloader anyway.)
+            ClassLoader entityLoader = entityClasses.isEmpty()
+                    ? Thread.currentThread().getContextClassLoader()
+                    : entityClasses.get(0).getClassLoader();
+            BootstrapServiceRegistry bootstrapRegistry = new BootstrapServiceRegistryBuilder()
+                    .applyClassLoader(entityLoader)
+                    .build();
+
+            Configuration configuration = new Configuration(bootstrapRegistry);
             Properties properties = new Properties();
 
             // Common settings
