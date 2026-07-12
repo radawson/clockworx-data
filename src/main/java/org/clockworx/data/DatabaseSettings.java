@@ -50,6 +50,37 @@ public record DatabaseSettings(
         if (hbm2ddl == null || hbm2ddl.isBlank()) {
             hbm2ddl = "none";
         }
+        // MySQL Connector/J 9.x will hang on connect if the socket stalls (no connect timeout) and
+        // fails auth over a non-SSL link to caching_sha2_password servers without public-key retrieval.
+        // Harden the URL centrally so no plugin can brick startup on a bad/slow DB link. Idempotent:
+        // only params the caller didn't already set are appended.
+        if (type == DatabaseType.MYSQL) {
+            url = hardenMysqlUrl(url);
+        }
+    }
+
+    /**
+     * Appends fail-fast / auth defaults to a MySQL JDBC URL when absent. Explicit params in the
+     * caller's URL always win (nothing already set is overwritten).
+     */
+    static String hardenMysqlUrl(String url) {
+        String[][] defaults = {
+                {"connectTimeout", "10000"},          // ms: fail fast instead of blocking forever on connect
+                {"socketTimeout", "60000"},           // ms: cap on a stalled read (generous for normal queries)
+                {"sslMode", "DISABLED"},              // modern replacement for the deprecated useSSL flag
+                {"allowPublicKeyRetrieval", "true"},  // caching_sha2_password auth over a non-SSL link
+                {"autoReconnect", "true"},
+        };
+        String lower = url.toLowerCase();
+        boolean hasQuery = url.indexOf('?') >= 0;
+        StringBuilder sb = new StringBuilder(url);
+        for (String[] kv : defaults) {
+            if (!lower.contains(kv[0].toLowerCase() + "=")) {
+                sb.append(hasQuery ? '&' : '?').append(kv[0]).append('=').append(kv[1]);
+                hasQuery = true;
+            }
+        }
+        return sb.toString();
     }
 
     /**
