@@ -78,7 +78,14 @@ public final class FlywayMigrator {
                     .locations(locations)
                     .encoding("UTF-8")
                     .baselineOnMigrate(true)
-                    .baselineVersion("1")
+                    // Baseline at v0 (not v1): when a plugin first migrates against a schema that is
+                    // non-empty (shared with other plugins) but has no history table of its own,
+                    // Flyway inserts a baseline marker and then applies migrations with version >
+                    // baselineVersion. With baselineVersion=1 the V1 script (version 1 <= 1) was
+                    // treated as already-applied and SKIPPED, so the plugin's tables were never
+                    // created (observed with villages on the shared `minecraft` schema). v0 lets V1+
+                    // run; migrations use CREATE TABLE IF NOT EXISTS so re-running is safe.
+                    .baselineVersion("0")
                     .placeholders(Map.of("tablePrefix", settings.tablePrefix()))
                     .table(settings.historyTableName());
 
